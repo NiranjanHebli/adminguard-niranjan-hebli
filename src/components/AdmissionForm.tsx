@@ -259,14 +259,15 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
   const [currentStep, setCurrentStep] = useState(0);
 
   const handleSubmit = async (values: any, { setSubmitting }: any) => {
-    const exceptionCount = validationRules
-      .filter(r => r.type === 'soft' && r.exceptionAllowed)
+    const softRules = validationRules.filter(r => r.type === 'soft' && r.exceptionAllowed);
+    const exceptionCount = softRules
       .map(r => values[`${r.field}ExceptionRequested`])
       .filter(Boolean).length;
 
+    const isFlagged = exceptionCount > 2;
     const payload = {
       ...values,
-      isFlagged: exceptionCount > 2
+      isFlagged
     };
 
     try {
@@ -275,7 +276,28 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+
       if (response.ok) {
+        // Audit Log Persistence
+        const auditEntry = {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          candidateName: values.fullName,
+          email: values.email,
+          values: values,
+          exceptionCount,
+          exceptions: softRules
+            .filter(r => values[`${r.field}ExceptionRequested`])
+            .map(r => ({
+              field: r.field,
+              rationale: values[`${r.field}ExceptionRationale`]
+            })),
+          isFlagged
+        };
+
+        const existingLogs = JSON.parse(localStorage.getItem('admission_audit_log') || '[]');
+        localStorage.setItem('admission_audit_log', JSON.stringify([auditEntry, ...existingLogs]));
+
         onComplete();
       }
     } catch (error) {

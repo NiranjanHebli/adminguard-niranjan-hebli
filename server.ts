@@ -18,10 +18,16 @@ db.exec(`
     email TEXT,
     action TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    details TEXT,
-    is_flagged INTEGER DEFAULT 0
+    details TEXT
   )
 `);
+
+// Migration: Add is_flagged column if it doesn't exist
+const tableInfo = db.prepare("PRAGMA table_info(audit_trail)").all() as any[];
+const hasFlaggedColumn = tableInfo.some(col => col.name === 'is_flagged');
+if (!hasFlaggedColumn) {
+  db.exec("ALTER TABLE audit_trail ADD COLUMN is_flagged INTEGER DEFAULT 0");
+}
 
 async function startServer() {
   const app = express();
