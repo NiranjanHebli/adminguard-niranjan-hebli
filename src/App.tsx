@@ -3,18 +3,33 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AdmissionForm } from './components/AdmissionForm';
 import { AuditLog } from './components/AuditLog';
-import { GraduationCap, ClipboardList, ShieldCheck, History, UserPlus } from 'lucide-react';
+import { GraduationCap, ClipboardList, ShieldCheck, History, UserPlus, Sun, Moon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'light';
+    const stored = window.localStorage.getItem('theme');
+    if (stored === 'light' || stored === 'dark') return stored;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [activeTab, setActiveTab] = useState<'form' | 'audit'>('form');
 
+  useEffect(() => {
+    window.localStorage.setItem('theme', theme);
+  }, [theme]);
+
   return (
-    <div className="min-h-screen bg-[#f5f5f5] text-[#1a1a1a] font-sans selection:bg-emerald-100 selection:text-emerald-900">
+    <div className={theme === 'dark' ? 'dark' : ''}>
+      <div
+        className={`min-h-screen font-sans selection:bg-emerald-100 selection:text-emerald-900 ${
+          theme === 'dark' ? 'bg-[#020617] text-white' : 'bg-[#f5f5f5] text-[#1a1a1a]'
+        }`}
+      >
       {/* Header */}
       <header className="bg-white border-b border-black/5 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -50,8 +65,26 @@ export default function App() {
             </button>
           </nav>
 
-          <div className="hidden sm:flex items-center gap-4 text-sm font-medium text-gray-500">
-            <span className="text-xs px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md">v2.1.0</span>
+          <div className="flex items-center gap-3 text-sm font-medium text-gray-500">
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 hover:border-emerald-500 hover:bg-emerald-50/40 transition-colors"
+            >
+              {theme === 'dark' ? (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Light mode</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Dark mode</span>
+                </>
+              )}
+            </button>
+            <span className="hidden sm:inline text-xs px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md">
+              v2.1.0
+            </span>
           </div>
         </div>
       </header>
@@ -144,11 +177,11 @@ export default function App() {
                   </ul>
                 </div>
 
-                <div className="bg-emerald-50 rounded-2xl p-6 border border-emerald-100">
+                {/* <div className="bg-emerald-50 rounded-2xl p-6 border border-emerald-100">
                   <p className="text-xs text-emerald-800 leading-relaxed">
                     <strong>Note:</strong> All submissions are logged to a secure PostgreSQL audit trail for compliance and tracking purposes.
                   </p>
-                </div>
+                </div> */}
               </aside>
             </motion.div>
           ) : (
@@ -167,7 +200,8 @@ export default function App() {
       <footer className="max-w-5xl mx-auto px-6 py-12 border-t border-black/5 text-center">
         <p className="text-sm text-gray-400">© 2026 EduEnroll Systems. All rights reserved.</p>
       </footer>
+      </div>
     </div>
   );
 }
-
+ 

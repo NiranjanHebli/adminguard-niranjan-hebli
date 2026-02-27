@@ -361,12 +361,12 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
             <div key={step.id} className="relative z-10 flex flex-col items-center gap-2">
               <div className={`
                 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300
-                ${idx <= currentStep ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200' : 'bg-white border-2 border-gray-200 text-gray-400'}
+                ${idx <= currentStep ? 'bg-emerald-600 text-white' : 'bg-white border-2 border-gray-200 text-gray-400'}
               `}>
                 {idx < currentStep ? <CheckCircle2 className="w-5 h-5" /> : idx + 1}
               </div>
               <div className="absolute -bottom-8 whitespace-nowrap text-center">
-                <span className={`text-[10px] uppercase font-bold tracking-widest ${idx <= currentStep ? 'text-emerald-600' : 'text-gray-400'}`}>
+                <span className="text-[10px] uppercase font-bold tracking-widest text-white">
                   {step.title}
                 </span>
               </div>
@@ -611,7 +611,7 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
                     <button
                       type="button"
                       onClick={() => nextStep(validateForm, setTouched, touched)}
-                      className="flex items-center gap-2 px-8 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
+                      className="flex items-center gap-2 px-8 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-transform active:scale-95"
                     >
                       Continue
                       <ChevronRight className="w-4 h-4" />

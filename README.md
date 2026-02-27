@@ -1,5 +1,13 @@
 # Admin Guard
 
+[![React](https://img.shields.io/badge/React-17.0.2-blue?logo=react)](https://reactjs.org/)
+[![Formik](https://img.shields.io/badge/Formik-2.4.5-orange?logo=npm)](https://formik.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20.x-green?logo=node.js)](https://nodejs.org/)[![Eligibility Engine](https://img.shields.io/badge/Eligibility%20Rule%20Engine-JSON%20Config-purple)](https://your-repo-or-docs-link)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16.x-lightblue?logo=postgresql)](https://www.postgresql.org/)
+
+
+
+
 ## Problem Statement
 
 **The Bottleneck**: Candidate data entry via Google Sheets/Excel operates without validation or eligibility rule enforcement, allowing unqualified applicants to progress through expensive recruitment stages undetected.

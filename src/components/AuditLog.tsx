@@ -44,9 +44,80 @@ export function AuditLog() {
     setShowClearConfirm(false);
   };
 
+  const exportToCSV = () => {
+    if (logs.length === 0) return;
+
+    const headers = [
+      'ID',
+      'Timestamp',
+      'Candidate Name',
+      'Email',
+      'Exception Count',
+      'Sent For Manager Review',
+      'Full Name',
+      'Phone',
+      'DOB',
+      'Aadhaar',
+      'Qualification',
+      'Graduation Year',
+      'Score Type',
+      'Score',
+      'Screening Score',
+      'Interview Status',
+      'Offer Letter Sent'
+    ];
+
+    const escape = (value: any) => {
+      if (value === null || value === undefined) return '""';
+      const str = String(value).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const rows = logs.map((log) => {
+      const v = log.values || {};
+      return [
+        log.id,
+        log.timestamp,
+        log.candidateName,
+        log.email,
+        log.exceptionCount,
+        log.isFlagged ? 'Yes' : 'No',
+        v.fullName,
+        v.phone,
+        v.dob,
+        v.aadhaar,
+        v.qualification,
+        v.graduationYear,
+        v.scoreType,
+        v.score,
+        v.screeningScore,
+        v.interviewStatus,
+        v.offerLetterSent ? 'Yes' : 'No'
+      ]
+        .map(escape)
+        .join(',');
+    });
+
+    const csvContent = [headers.map(escape).join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `audit_logs_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
   };
+
+  const totalSubmissions = logs.length;
+  const flaggedCount = logs.filter((log) => log.isFlagged).length;
+  const submissionsWithExceptions = logs.filter((log) => log.exceptionCount > 0).length;
+  const exceptionRate = totalSubmissions === 0 ? 0 : Math.round((submissionsWithExceptions / totalSubmissions) * 100);
 
   return (
     <div className="space-y-6">
@@ -62,14 +133,56 @@ export function AuditLog() {
         </div>
         
         {logs.length > 0 && (
-          <button
-            onClick={() => setShowClearConfirm(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-            Clear Log
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={exportToCSV}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              Export CSV
+            </button>
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear Log
+            </button>
+          </div>
         )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white rounded-2xl p-4 border border-black/5 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Total Submissions</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-900">{totalSubmissions}</p>
+          </div>
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <ClipboardList className="w-5 h-5" />
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl p-4 border border-black/5 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Exception Rate</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-900">{exceptionRate}%</p>
+            <p className="text-[11px] text-gray-400 mt-1">
+              {submissionsWithExceptions} of {totalSubmissions || 0} with exceptions
+            </p>
+          </div>
+          <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <AlertCircle className="w-5 h-5" />
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl p-4 border border-black/5 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Flagged Entries</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-900">{flaggedCount}</p>
+          </div>
+          <div className="w-9 h-9 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
+            <ShieldAlert className="w-5 h-5" />
+          </div>
+        </div>
       </div>
 
       {logs.length === 0 ? (
@@ -95,7 +208,7 @@ export function AuditLog() {
               <tbody className="divide-y divide-black/5">
                 {logs.map((log) => (
                   <React.Fragment key={log.id}>
-                    <tr className={`hover:bg-gray-50/50 transition-colors ${log.isFlagged ? 'bg-amber-50/30' : ''}`}>
+                    <tr className={`bg-gray-50/50 transition-colors ${log.isFlagged ? 'bg-amber-50/30' : ''}`}>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
@@ -127,7 +240,7 @@ export function AuditLog() {
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-emerald-200 whitespace-nowrap">
                             <CheckCircle2 className="w-3 h-3" />
-                            Standard
+                            Clear
                           </span>
                         )}
                       </td>

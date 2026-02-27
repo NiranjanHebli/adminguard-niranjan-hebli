@@ -17,3 +17,9 @@
 - **Completed:** Exception fields added for 4 soft rules, rationale validation implemented
 - **Design Decisions:** Chose to validate exception rationales separately from main form fields, reused existing validation code
 - **Prompts Utilized:** 4 (rationale phrases, edge cases, exception handling, validation reusability)
+
+## Sprint 3
+- **Objective:** Develop a full audit trail with all form modifications tracked
+- **Completed:** Audit trail table created, all form modifications tracked and logged
+- **Design Decisions:** Chose to store all form modifications (including field values) in a single table for easy querying and analysis
+- **Prompts Utilized:** 4 (audit trail requirements, data storage, querying, analysis)
