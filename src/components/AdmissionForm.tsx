@@ -1,9 +1,23 @@
-import { useState } from 'react';
-import { Formik, Form, Field } from 'formik';
+import { useState, useEffect } from 'react';
+import { Formik, Form, Field, useFormikContext } from 'formik';
 import * as Yup from 'yup';
 import { FormField } from './FormField';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronRight, ChevronLeft, CheckCircle2, AlertCircle, ToggleLeft, ToggleRight } from 'lucide-react';
+
+// Helper component to sync offerLetterSent state with interviewStatus
+const FormWatcher = () => {
+  const { values, setFieldValue } = useFormikContext<any>();
+  
+  useEffect(() => {
+    const isEligibleForOffer = values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted';
+    if (!isEligibleForOffer && values.offerLetterSent) {
+      setFieldValue('offerLetterSent', false);
+    }
+  }, [values.interviewStatus, values.offerLetterSent, setFieldValue]);
+
+  return null;
+};
 
 const STEPS = [
   { id: 'personal', title: 'Personal', description: 'Identity & Contact' },
@@ -51,10 +65,10 @@ const validationSchema = Yup.object({
     .test('not-rejected', 'Rejected candidates cannot be enrolled', value => value !== 'Rejected'),
   offerLetterSent: Yup.boolean().test(
     'offer-status-check',
-    'Cannot send offer to rejected candidates',
+    'Offer can only be sent to Cleared or Waitlisted candidates',
     function(value) {
       const { interviewStatus } = this.parent;
-      if (value === true && interviewStatus === 'Rejected') return false;
+      if (value === true && interviewStatus !== 'Cleared' && interviewStatus !== 'Waitlisted') return false;
       return true;
     }
   ),
@@ -127,6 +141,7 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
       >
         {({ values, errors, touched, isValid, isSubmitting, setFieldValue, validateForm, setTouched }) => (
           <Form className="p-8 space-y-8">
+            <FormWatcher />
             <AnimatePresence mode="wait">
               {currentStep === 0 && (
                 <motion.div
@@ -251,17 +266,31 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-6 bg-emerald-50 rounded-2xl border border-emerald-100">
+                  <div className={`flex items-center justify-between p-6 rounded-2xl border transition-colors duration-200 ${
+                    (values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted') 
+                      ? 'bg-emerald-50 border-emerald-100' 
+                      : 'bg-gray-50 border-gray-100 opacity-60'
+                  }`}>
                     <div className="space-y-1">
-                      <h4 className="text-sm font-semibold text-emerald-900">Offer Letter Sent</h4>
-                      <p className="text-xs text-emerald-700">Has the official offer letter been dispatched to the candidate?</p>
+                      <h4 className={`text-sm font-semibold ${
+                        (values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted') ? 'text-emerald-900' : 'text-gray-500'
+                      }`}>Offer Letter Sent</h4>
+                      <p className={`text-xs ${
+                        (values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted') ? 'text-emerald-700' : 'text-gray-400'
+                      }`}>
+                        {values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted' 
+                          ? 'Has the official offer letter been dispatched?' 
+                          : 'Status must be Cleared or Waitlisted to send an offer.'}
+                      </p>
                     </div>
                     <button
                       type="button"
+                      disabled={values.interviewStatus !== 'Cleared' && values.interviewStatus !== 'Waitlisted'}
                       onClick={() => setFieldValue('offerLetterSent', !values.offerLetterSent)}
                       className={`
-                        w-14 h-8 rounded-full p-1 transition-colors duration-200 flex items-center
+                        w-14 h-8 rounded-full p-1 transition-all duration-200 flex items-center
                         ${values.offerLetterSent ? 'bg-emerald-600 justify-end' : 'bg-gray-300 justify-start'}
+                        ${(values.interviewStatus !== 'Cleared' && values.interviewStatus !== 'Waitlisted') ? 'cursor-not-allowed' : 'hover:ring-4 hover:ring-emerald-500/10'}
                       `}
                     >
                       <motion.div 
