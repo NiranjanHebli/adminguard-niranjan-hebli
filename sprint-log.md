@@ -11,3 +11,9 @@
 - **Completed:** All 11 fields rendered, 7 strict rules validated
 - **Design Decisions:** Used inline validation instead of submit-time validation for better UX
 - **Prompts Utilized:** 3 (foundation, strict rules, edge cases)
+ 
+## Sprint 2
+- **Objective:** Implement soft rule exception system with rationale validation
+- **Completed:** Exception fields added for 4 soft rules, rationale validation implemented
+- **Design Decisions:** Chose to validate exception rationales separately from main form fields, reused existing validation code
+- **Prompts Utilized:** 4 (rationale phrases, edge cases, exception handling, validation reusability)

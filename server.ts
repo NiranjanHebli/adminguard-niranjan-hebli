@@ -18,7 +18,8 @@ db.exec(`
     email TEXT,
     action TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    details TEXT
+    details TEXT,
+    is_flagged INTEGER DEFAULT 0
   )
 `);
 
@@ -46,11 +47,11 @@ async function startServer() {
   });
 
   app.post("/api/admission", (req, res) => {
-    const { fullName, email, ...details } = req.body;
+    const { fullName, email, isFlagged, ...details } = req.body;
     
     try {
-      const stmt = db.prepare("INSERT INTO audit_trail (candidate_name, email, action, details) VALUES (?, ?, ?, ?)");
-      stmt.run(fullName, email, "SUBMIT_ADMISSION", JSON.stringify(details));
+      const stmt = db.prepare("INSERT INTO audit_trail (candidate_name, email, action, details, is_flagged) VALUES (?, ?, ?, ?, ?)");
+      stmt.run(fullName, email, "SUBMIT_ADMISSION", JSON.stringify(details), isFlagged ? 1 : 0);
       
       res.json({ success: true, message: "Admission form submitted and logged to audit trail." });
     } catch (error) {

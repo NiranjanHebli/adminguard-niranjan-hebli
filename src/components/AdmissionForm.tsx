@@ -126,6 +126,7 @@ const initialValues = {
   scoreExceptionRationale: '',
   screeningScoreExceptionRequested: false,
   screeningScoreExceptionRationale: '',
+  isFlagged: false,
 };
 
 const RATIONALE_PHRASES = ["approved by", "special case", "documentation pending", "waiver granted"];
@@ -203,15 +204,25 @@ const validationSchema = Yup.object({
   interviewStatus: Yup.string()
     .required('Interview Status is required')
     .test('not-rejected', 'Rejected candidates cannot be enrolled', value => value !== 'Rejected'),
-  offerLetterSent: Yup.boolean().test(
-    'offer-status-check',
-    'Offer can only be sent to Cleared or Waitlisted candidates',
-    function(value) {
-      const { interviewStatus } = this.parent;
-      if (value === true && interviewStatus !== 'Cleared' && interviewStatus !== 'Waitlisted') return false;
-      return true;
-    }
-  ),
+  offerLetterSent: Yup.boolean()
+    .test(
+      'offer-status-check',
+      'Offer can only be sent to Cleared or Waitlisted candidates',
+      function(value) {
+        const { interviewStatus } = this.parent;
+        if (value === true && interviewStatus !== 'Cleared' && interviewStatus !== 'Waitlisted') return false;
+        return true;
+      }
+    )
+    .test(
+      'offer-required',
+      'Offer letter must be sent for Cleared candidates',
+      function(value) {
+        const { interviewStatus } = this.parent;
+        if (interviewStatus === 'Cleared' && value !== true) return false;
+        return true;
+      }
+    ),
   // Rationale validations
   dobExceptionRationale: Yup.string().when('dobExceptionRequested', {
     is: true,
@@ -235,11 +246,23 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
   const [currentStep, setCurrentStep] = useState(0);
 
   const handleSubmit = async (values: any, { setSubmitting }: any) => {
+    const exceptionCount = [
+      values.dobExceptionRequested,
+      values.graduationYearExceptionRequested,
+      values.scoreExceptionRequested,
+      values.screeningScoreExceptionRequested
+    ].filter(Boolean).length;
+
+    const payload = {
+      ...values,
+      isFlagged: exceptionCount > 2
+    };
+
     try {
       const response = await fetch('/api/admission', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
       if (response.ok) {
         onComplete();
@@ -254,11 +277,11 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
   const nextStep = async (validateForm: any, setTouched: any, touched: any) => {
     const errors = await validateForm();
     
-    // Fields belonging to each step
+    // Fields belonging to each step including their exception fields
     const stepFields: Record<number, string[]> = {
-      0: ['fullName', 'email', 'phone', 'dob', 'aadhaar'],
-      1: ['qualification', 'graduationYear', 'score'],
-      2: ['screeningScore', 'interviewStatus']
+      0: ['fullName', 'email', 'phone', 'dob', 'aadhaar', 'dobExceptionRequested', 'dobExceptionRationale'],
+      1: ['qualification', 'graduationYear', 'score', 'graduationYearExceptionRequested', 'graduationYearExceptionRationale', 'scoreExceptionRequested', 'scoreExceptionRationale'],
+      2: ['screeningScore', 'interviewStatus', 'screeningScoreExceptionRequested', 'screeningScoreExceptionRationale', 'offerLetterSent']
     };
 
     const currentFields = stepFields[currentStep];
@@ -312,237 +335,264 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
         initialValues={initialValues}
         validationSchema={validationSchema}
         onSubmit={handleSubmit}
+        validateOnMount={true}
       >
-        {({ values, errors, touched, isValid, isSubmitting, setFieldValue, validateForm, setTouched }) => (
-          <Form className="p-8 space-y-8">
-            <FormWatcher />
-            <AnimatePresence mode="wait">
-              {currentStep === 0 && (
-                <motion.div
-                  key="step1"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="grid grid-cols-1 md:grid-cols-2 gap-6"
-                >
-                  <FormField 
-                    label="Full Name" 
-                    name="fullName" 
-                    placeholder="John Doe" 
-                    className="md:col-span-2"
-                  />
-                  <FormField 
-                    label="Email Address" 
-                    name="email" 
-                    type="email" 
-                    placeholder="john@example.com" 
-                  />
-                  <FormField 
-                    label="Phone Number" 
-                    name="phone" 
-                    placeholder="10-digit mobile" 
-                    helperText="Enter without country code"
-                  />
-                  <SoftRuleWrapper 
-                    name="dob" 
-                    condition={!values.dob || (differenceInYears(new Date(), values.dob) >= 18 && differenceInYears(new Date(), values.dob) <= 35)}
-                    warningMessage="Candidate age should ideally be between 18 and 35 years."
-                  >
-                    <FormField 
-                      label="Date of Birth" 
-                      name="dob" 
-                      type="date" 
-                    />
-                  </SoftRuleWrapper>
-                  <FormField 
-                    label="Aadhaar Number" 
-                    name="aadhaar" 
-                    placeholder="12-digit UID" 
-                    helperText="Strictly 12 digits required"
-                  />
-                </motion.div>
-              )}
+        {({ values, errors, touched, isValid, isSubmitting, setFieldValue, validateForm, setTouched }) => {
+          const exceptionCount = [
+            values.dobExceptionRequested,
+            values.graduationYearExceptionRequested,
+            values.scoreExceptionRequested,
+            values.screeningScoreExceptionRequested
+          ].filter(Boolean).length;
 
-              {currentStep === 1 && (
-                <motion.div
-                  key="step2"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="grid grid-cols-1 md:grid-cols-2 gap-6"
-                >
-                  <FormField 
-                    label="Highest Qualification" 
-                    name="qualification" 
-                    type="select" 
-                    options={["B.Tech", "B.E.", "B.Sc", "BCA", "M.Tech", "M.Sc", "MCA", "MBA"]}
-                    className="md:col-span-2"
-                  />
-                  <SoftRuleWrapper
-                    name="graduationYear"
-                    condition={!values.graduationYear || (values.graduationYear >= 2015 && values.graduationYear <= 2025)}
-                    warningMessage="Graduation year should be between 2015 and 2025."
+          const isFlagged = exceptionCount > 2;
+
+          return (
+            <Form className="p-8 space-y-8">
+              <FormWatcher />
+              <AnimatePresence mode="wait">
+                {currentStep === 0 && (
+                  <motion.div
+                    key="step1"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="grid grid-cols-1 md:grid-cols-2 gap-6"
                   >
                     <FormField 
-                      label="Graduation Year" 
-                      name="graduationYear" 
-                      type="number" 
+                      label="Full Name" 
+                      name="fullName" 
+                      placeholder="John Doe" 
+                      className="md:col-span-2"
                     />
-                  </SoftRuleWrapper>
-                  
-                  <div className="space-y-4 md:col-span-2 p-6 bg-gray-50 rounded-2xl border border-gray-100">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold uppercase tracking-widest text-gray-500">Academic Score</span>
+                    <FormField 
+                      label="Email Address" 
+                      name="email" 
+                      type="email" 
+                      placeholder="john@example.com" 
+                    />
+                    <FormField 
+                      label="Phone Number" 
+                      name="phone" 
+                      placeholder="10-digit mobile" 
+                      helperText="Enter without country code"
+                    />
+                    <SoftRuleWrapper 
+                      name="dob" 
+                      condition={!values.dob || (differenceInYears(new Date(), values.dob) >= 18 && differenceInYears(new Date(), values.dob) <= 35)}
+                      warningMessage="Candidate age should ideally be between 18 and 35 years."
+                    >
+                      <FormField 
+                        label="Date of Birth" 
+                        name="dob" 
+                        type="date" 
+                      />
+                    </SoftRuleWrapper>
+                    <FormField 
+                      label="Aadhaar Number" 
+                      name="aadhaar" 
+                      placeholder="12-digit UID" 
+                      helperText="Strictly 12 digits required"
+                    />
+                  </motion.div>
+                )}
+
+                {currentStep === 1 && (
+                  <motion.div
+                    key="step2"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="grid grid-cols-1 md:grid-cols-2 gap-6"
+                  >
+                    <FormField 
+                      label="Highest Qualification" 
+                      name="qualification" 
+                      type="select" 
+                      options={["B.Tech", "B.E.", "B.Sc", "BCA", "M.Tech", "M.Sc", "MCA", "MBA"]}
+                      className="md:col-span-2"
+                    />
+                    <SoftRuleWrapper
+                      name="graduationYear"
+                      condition={!values.graduationYear || (values.graduationYear >= 2015 && values.graduationYear <= 2025)}
+                      warningMessage="Graduation year should be between 2015 and 2025."
+                    >
+                      <FormField 
+                        label="Graduation Year" 
+                        name="graduationYear" 
+                        type="number" 
+                      />
+                    </SoftRuleWrapper>
+                    
+                    <div className="space-y-4 md:col-span-2 p-6 bg-gray-50 rounded-2xl border border-gray-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-widest text-gray-500">Academic Score</span>
+                        <button
+                          type="button"
+                          onClick={() => setFieldValue('scoreType', values.scoreType === 'percentage' ? 'cgpa' : 'percentage')}
+                          className="flex items-center gap-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          {values.scoreType === 'percentage' ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                          Switch to {values.scoreType === 'percentage' ? 'CGPA' : 'Percentage'}
+                        </button>
+                      </div>
+                      <SoftRuleWrapper
+                        name="score"
+                        condition={values.score === '' || values.score === null || Number(values.score) >= (values.scoreType === 'percentage' ? 60 : 6.0)}
+                        warningMessage={`Minimum ${values.scoreType === 'percentage' ? '60%' : '6.0 CGPA'} required for standard admission.`}
+                      >
+                        <FormField 
+                          label={values.scoreType === 'percentage' ? 'Percentage (%)' : 'CGPA (out of 10)'} 
+                          name="score" 
+                          type="number" 
+                          placeholder={values.scoreType === 'percentage' ? 'e.g. 85' : 'e.g. 8.5'}
+                        />
+                      </SoftRuleWrapper>
+                    </div>
+                  </motion.div>
+                )}
+
+                {currentStep === 2 && (
+                  <motion.div
+                    key="step3"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="space-y-6"
+                  >
+                    {values.interviewStatus === 'Rejected' && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="flex items-center gap-3 text-red-600 bg-red-50 p-4 rounded-xl border border-red-200"
+                      >
+                        <AlertCircle className="w-5 h-5 shrink-0" />
+                        <p className="text-sm font-bold uppercase tracking-wide">
+                          Rejected candidates cannot be enrolled.
+                        </p>
+                      </motion.div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <SoftRuleWrapper
+                        name="screeningScore"
+                        condition={values.screeningScore === '' || values.screeningScore === null || Number(values.screeningScore) >= 40}
+                        warningMessage="Screening score should be at least 40 out of 100."
+                      >
+                        <FormField 
+                          label="Screening Test Score" 
+                          name="screeningScore" 
+                          type="number" 
+                          placeholder="0-100"
+                        />
+                      </SoftRuleWrapper>
+                      <FormField 
+                        label="Interview Status" 
+                        name="interviewStatus" 
+                        type="select" 
+                        options={["Cleared", "Waitlisted", "Rejected"]}
+                      />
+                    </div>
+
+                    <div className={`flex items-center justify-between p-6 rounded-2xl border transition-colors duration-200 ${
+                      (values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted') 
+                        ? 'bg-emerald-50 border-emerald-100' 
+                        : 'bg-gray-50 border-gray-100 opacity-60'
+                    }`}>
+                      <div className="space-y-1">
+                        <h4 className={`text-sm font-semibold ${
+                          (values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted') ? 'text-emerald-900' : 'text-gray-500'
+                        }`}>Offer Letter Sent</h4>
+                        <p className={`text-xs ${
+                          (values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted') ? 'text-emerald-700' : 'text-gray-400'
+                        }`}>
+                          {values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted' 
+                            ? 'Has the official offer letter been dispatched?' 
+                            : 'Status must be Cleared or Waitlisted to send an offer.'}
+                        </p>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setFieldValue('scoreType', values.scoreType === 'percentage' ? 'cgpa' : 'percentage')}
-                        className="flex items-center gap-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors"
+                        disabled={values.interviewStatus !== 'Cleared' && values.interviewStatus !== 'Waitlisted'}
+                        onClick={() => setFieldValue('offerLetterSent', !values.offerLetterSent)}
+                        className={`
+                          w-14 h-8 rounded-full p-1 transition-all duration-200 flex items-center
+                          ${values.offerLetterSent ? 'bg-emerald-600 justify-end' : 'bg-gray-300 justify-start'}
+                          ${(values.interviewStatus !== 'Cleared' && values.interviewStatus !== 'Waitlisted') ? 'cursor-not-allowed' : 'hover:ring-4 hover:ring-emerald-500/10'}
+                        `}
                       >
-                        {values.scoreType === 'percentage' ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-                        Switch to {values.scoreType === 'percentage' ? 'CGPA' : 'Percentage'}
+                        <motion.div 
+                          layout
+                          className="w-6 h-6 bg-white rounded-full shadow-sm"
+                        />
                       </button>
                     </div>
-                    <SoftRuleWrapper
-                      name="score"
-                      condition={values.score === '' || values.score === null || Number(values.score) >= (values.scoreType === 'percentage' ? 60 : 6.0)}
-                      warningMessage={`Minimum ${values.scoreType === 'percentage' ? '60%' : '6.0 CGPA'} required for standard admission.`}
-                    >
-                      <FormField 
-                        label={values.scoreType === 'percentage' ? 'Percentage (%)' : 'CGPA (out of 10)'} 
-                        name="score" 
-                        type="number" 
-                        placeholder={values.scoreType === 'percentage' ? 'e.g. 85' : 'e.g. 8.5'}
-                      />
-                    </SoftRuleWrapper>
-                  </div>
-                </motion.div>
-              )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-              {currentStep === 2 && (
-                <motion.div
-                  key="step3"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="space-y-6"
-                >
-                  {values.interviewStatus === 'Rejected' && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="flex items-center gap-3 text-red-600 bg-red-50 p-4 rounded-xl border border-red-200"
-                    >
-                      <AlertCircle className="w-5 h-5 shrink-0" />
-                      <p className="text-sm font-bold uppercase tracking-wide">
-                        Rejected candidates cannot be enrolled.
-                      </p>
-                    </motion.div>
-                  )}
+              {/* Flagging Warning Banner */}
+              <AnimatePresence>
+                {isFlagged && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 20 }}
+                    className="bg-amber-100 border border-amber-200 p-4 rounded-2xl flex items-center gap-3"
+                  >
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                    <p className="text-sm font-bold text-amber-900">
+                      ⚠️ This candidate has more than 2 exceptions. Entry will be flagged for manager review.
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <SoftRuleWrapper
-                      name="screeningScore"
-                      condition={values.screeningScore === '' || values.screeningScore === null || Number(values.screeningScore) >= 40}
-                      warningMessage="Screening score should be at least 40 out of 100."
-                    >
-                      <FormField 
-                        label="Screening Test Score" 
-                        name="screeningScore" 
-                        type="number" 
-                        placeholder="0-100"
-                      />
-                    </SoftRuleWrapper>
-                    <FormField 
-                      label="Interview Status" 
-                      name="interviewStatus" 
-                      type="select" 
-                      options={["Cleared", "Waitlisted", "Rejected"]}
-                    />
-                  </div>
-
-                  <div className={`flex items-center justify-between p-6 rounded-2xl border transition-colors duration-200 ${
-                    (values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted') 
-                      ? 'bg-emerald-50 border-emerald-100' 
-                      : 'bg-gray-50 border-gray-100 opacity-60'
-                  }`}>
-                    <div className="space-y-1">
-                      <h4 className={`text-sm font-semibold ${
-                        (values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted') ? 'text-emerald-900' : 'text-gray-500'
-                      }`}>Offer Letter Sent</h4>
-                      <p className={`text-xs ${
-                        (values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted') ? 'text-emerald-700' : 'text-gray-400'
-                      }`}>
-                        {values.interviewStatus === 'Cleared' || values.interviewStatus === 'Waitlisted' 
-                          ? 'Has the official offer letter been dispatched?' 
-                          : 'Status must be Cleared or Waitlisted to send an offer.'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={values.interviewStatus !== 'Cleared' && values.interviewStatus !== 'Waitlisted'}
-                      onClick={() => setFieldValue('offerLetterSent', !values.offerLetterSent)}
-                      className={`
-                        w-14 h-8 rounded-full p-1 transition-all duration-200 flex items-center
-                        ${values.offerLetterSent ? 'bg-emerald-600 justify-end' : 'bg-gray-300 justify-start'}
-                        ${(values.interviewStatus !== 'Cleared' && values.interviewStatus !== 'Waitlisted') ? 'cursor-not-allowed' : 'hover:ring-4 hover:ring-emerald-500/10'}
-                      `}
-                    >
-                      <motion.div 
-                        layout
-                        className="w-6 h-6 bg-white rounded-full shadow-sm"
-                      />
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Form Footer */}
-            <div className="pt-8 border-t border-black/5 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={prevStep}
-                disabled={currentStep === 0}
-                className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-gray-500 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Back
-              </button>
-
-              <div className="flex items-center gap-4">
-                {currentStep < STEPS.length - 1 ? (
+              {/* Form Footer */}
+              <div className="pt-8 border-t border-black/5 flex items-center justify-between">
+                <div className="flex flex-col">
                   <button
                     type="button"
-                    onClick={() => nextStep(validateForm, setTouched, touched)}
-                    className="flex items-center gap-2 px-8 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
+                    onClick={prevStep}
+                    disabled={currentStep === 0}
+                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-gray-500 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
-                    Continue
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronLeft className="w-4 h-4" />
+                    Back
                   </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!isValid || isSubmitting}
-                    className="flex items-center gap-2 px-10 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none transition-all shadow-lg shadow-emerald-200 active:scale-95"
-                  >
-                    {isSubmitting ? 'Processing...' : 'Submit Application'}
-                    <CheckCircle2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
+                  <div className="px-6 mt-1">
+                    <span className={`text-[10px] font-bold uppercase tracking-widest ${isFlagged ? 'text-amber-600' : 'text-gray-400'}`}>
+                      Active Exceptions: {exceptionCount}/4
+                    </span>
+                  </div>
+                </div>
 
-            {/* Validation Summary (Optional but helpful) */}
-            {!isValid && Object.keys(errors).length > 0 && touched.fullName && (
-              <div className="flex items-center gap-2 text-red-500 bg-red-50 p-4 rounded-xl border border-red-100">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <p className="text-[11px] font-medium uppercase tracking-wider">
-                  Please complete all required fields with valid information to submit.
-                </p>
+                <div className="flex items-center gap-4">
+                  {currentStep < STEPS.length - 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => nextStep(validateForm, setTouched, touched)}
+                      className="flex items-center gap-2 px-8 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
+                    >
+                      Continue
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={!isValid || isSubmitting}
+                      className="flex items-center gap-2 px-10 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none transition-all shadow-lg shadow-emerald-200 active:scale-95"
+                    >
+                      {isSubmitting ? 'Processing...' : 'Submit Application'}
+                      <CheckCircle2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-            )}
-          </Form>
-        )}
+
+            </Form>
+          );
+        }}
       </Formik>
     </div>
   );
