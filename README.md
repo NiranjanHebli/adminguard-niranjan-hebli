@@ -53,3 +53,12 @@ Vercel/Netlify (zero server management)
 - **Rule changes** deploy in 5 minutes vs 2 days
 
 **MVP in 2 weeks**: Form + 3 core eligibility rules + exception logging.
+
+## Run Locally
+
+**Prerequisites:**  Node.js
+
+1. Install dependencies:
+   `npm install`
+2. Run the app:
+   `npm run dev`

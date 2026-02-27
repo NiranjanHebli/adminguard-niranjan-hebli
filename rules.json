@@ -1,0 +1,15 @@
+{
+  "minPercentage": 60,
+  "minCGPA": 6.5,
+  "minScreeningScore": 50,
+  "allowedQualifications": [
+    "B.Tech",
+    "B.E.",
+    "B.Sc",
+    "BCA",
+    "M.Tech",
+    "M.Sc",
+    "MCA",
+    "MBA"
+  ]
+}
