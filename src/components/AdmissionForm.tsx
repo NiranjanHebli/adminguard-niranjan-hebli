@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, cloneElement, ReactElement } from 'react';
 import { Formik, Form, Field, useFormikContext } from 'formik';
 import * as Yup from 'yup';
 import { FormField } from './FormField';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, ChevronLeft, CheckCircle2, AlertCircle, ToggleLeft, ToggleRight } from 'lucide-react';
+import { ChevronRight, ChevronLeft, CheckCircle2, AlertCircle, ToggleLeft, ToggleRight, Info } from 'lucide-react';
+import { differenceInYears, parseISO } from 'date-fns';
 
 // Helper component to sync offerLetterSent state with interviewStatus
 const FormWatcher = () => {
@@ -17,6 +18,84 @@ const FormWatcher = () => {
   }, [values.interviewStatus, values.offerLetterSent, setFieldValue]);
 
   return null;
+};
+
+const SoftRuleWrapper = ({ 
+  name, 
+  condition, 
+  warningMessage, 
+  children 
+}: { 
+  name: string; 
+  condition: boolean; 
+  warningMessage: string; 
+  children: ReactElement 
+}) => {
+  const { values, setFieldValue, touched } = useFormikContext<any>();
+  const isViolated = !condition;
+  const exceptionRequestedField = `${name}ExceptionRequested`;
+  const rationaleField = `${name}ExceptionRationale`;
+  
+  const isRequested = values[exceptionRequestedField];
+  const fieldTouched = touched[name];
+  
+  const status = (isViolated && fieldTouched) ? 'warning' : undefined;
+  const customError = (isViolated && fieldTouched) ? warningMessage : undefined;
+
+  return (
+    <div className="space-y-4">
+      {cloneElement(children as any, { status, customError })}
+      
+      {isViolated && fieldTouched && (
+        <motion.div 
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          className="bg-amber-50 border border-amber-100 rounded-2xl p-4 space-y-4"
+        >
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-amber-900 uppercase tracking-wide">Warning</p>
+              <p className="text-xs text-amber-700">{warningMessage}</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between pt-2 border-t border-amber-200/50">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-amber-800">Request Exception</span>
+            <button
+              type="button"
+              onClick={() => setFieldValue(exceptionRequestedField, !isRequested)}
+              className={`
+                w-10 h-6 rounded-full p-1 transition-colors duration-200 flex items-center
+                ${isRequested ? 'bg-amber-600 justify-end' : 'bg-amber-200 justify-start'}
+              `}
+            >
+              <motion.div layout className="w-4 h-4 bg-white rounded-full shadow-sm" />
+            </button>
+          </div>
+          
+          <AnimatePresence>
+            {isRequested && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="pt-2"
+              >
+                <FormField 
+                  label="Exception Rationale" 
+                  name={rationaleField} 
+                  type="textarea" 
+                  placeholder="Provide a detailed rationale (min 30 chars, include approval phrases)..."
+                  helperText="Must include one of: 'approved by', 'special case', 'documentation pending', 'waiver granted'"
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      )}
+    </div>
+  );
 };
 
 const STEPS = [
@@ -38,9 +117,24 @@ const initialValues = {
   screeningScore: '',
   interviewStatus: '',
   offerLetterSent: false,
+  // Exception fields
+  dobExceptionRequested: false,
+  dobExceptionRationale: '',
+  graduationYearExceptionRequested: false,
+  graduationYearExceptionRationale: '',
+  scoreExceptionRequested: false,
+  scoreExceptionRationale: '',
+  screeningScoreExceptionRequested: false,
+  screeningScoreExceptionRationale: '',
 };
 
-// Basic validation schema (User said "Do NOT write all validations yet", but we need some basic ones for the "disabled" button constraint)
+const RATIONALE_PHRASES = ["approved by", "special case", "documentation pending", "waiver granted"];
+const validateRationale = (val: string) => {
+  if (!val) return false;
+  if (val.length < 30) return false;
+  return RATIONALE_PHRASES.some(phrase => val.toLowerCase().includes(phrase));
+};
+
 const validationSchema = Yup.object({
   fullName: Yup.string()
     .required('Full Name is required')
@@ -52,14 +146,60 @@ const validationSchema = Yup.object({
   phone: Yup.string()
     .matches(/^[6-9]\d{9}$/, 'Must be 10 digits starting with 6, 7, 8, or 9')
     .required('Phone is required'),
-  dob: Yup.date().required('Required'),
+  dob: Yup.date()
+    .required('Required')
+    .test('soft-age', 'Age must be 18-35', function(value) {
+      if (!value) return true;
+      const age = differenceInYears(new Date(), value);
+      const isViolated = age < 18 || age > 35;
+      const { dobExceptionRequested, dobExceptionRationale } = this.parent;
+      if (isViolated) {
+        if (!dobExceptionRequested) return false;
+        return validateRationale(dobExceptionRationale);
+      }
+      return true;
+    }),
   aadhaar: Yup.string()
     .matches(/^\d{12}$/, 'Must be exactly 12 digits (numbers only)')
     .required('Aadhaar is required'),
   qualification: Yup.string().required('Qualification is required'),
-  graduationYear: Yup.number().min(2015).max(2025).required('Required'),
-  score: Yup.number().required('Required'),
-  screeningScore: Yup.number().min(0).max(100).required('Required'),
+  graduationYear: Yup.number()
+    .required('Required')
+    .test('soft-grad', 'Year must be 2015-2025', function(value) {
+      if (!value) return true;
+      const isViolated = value < 2015 || value > 2025;
+      const { graduationYearExceptionRequested, graduationYearExceptionRationale } = this.parent;
+      if (isViolated) {
+        if (!graduationYearExceptionRequested) return false;
+        return validateRationale(graduationYearExceptionRationale);
+      }
+      return true;
+    }),
+  score: Yup.number()
+    .required('Required')
+    .test('soft-score', 'Score too low', function(value) {
+      if (value === undefined || value === null) return true;
+      const { scoreType, scoreExceptionRequested, scoreExceptionRationale } = this.parent;
+      const min = scoreType === 'percentage' ? 60 : 6.0;
+      const isViolated = value < min;
+      if (isViolated) {
+        if (!scoreExceptionRequested) return false;
+        return validateRationale(scoreExceptionRationale);
+      }
+      return true;
+    }),
+  screeningScore: Yup.number()
+    .required('Required')
+    .test('soft-screening', 'Score must be >= 40', function(value) {
+      if (value === undefined || value === null) return true;
+      const isViolated = value < 40;
+      const { screeningScoreExceptionRequested, screeningScoreExceptionRationale } = this.parent;
+      if (isViolated) {
+        if (!screeningScoreExceptionRequested) return false;
+        return validateRationale(screeningScoreExceptionRationale);
+      }
+      return true;
+    }),
   interviewStatus: Yup.string()
     .required('Interview Status is required')
     .test('not-rejected', 'Rejected candidates cannot be enrolled', value => value !== 'Rejected'),
@@ -72,6 +212,23 @@ const validationSchema = Yup.object({
       return true;
     }
   ),
+  // Rationale validations
+  dobExceptionRationale: Yup.string().when('dobExceptionRequested', {
+    is: true,
+    then: (schema) => schema.min(30, 'Min 30 characters').test('phrase-check', 'Must include approval phrase', validateRationale)
+  }),
+  graduationYearExceptionRationale: Yup.string().when('graduationYearExceptionRequested', {
+    is: true,
+    then: (schema) => schema.min(30, 'Min 30 characters').test('phrase-check', 'Must include approval phrase', validateRationale)
+  }),
+  scoreExceptionRationale: Yup.string().when('scoreExceptionRequested', {
+    is: true,
+    then: (schema) => schema.min(30, 'Min 30 characters').test('phrase-check', 'Must include approval phrase', validateRationale)
+  }),
+  screeningScoreExceptionRationale: Yup.string().when('screeningScoreExceptionRequested', {
+    is: true,
+    then: (schema) => schema.min(30, 'Min 30 characters').test('phrase-check', 'Must include approval phrase', validateRationale)
+  }),
 });
 
 export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
@@ -94,9 +251,26 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
     }
   };
 
-  const nextStep = (validateForm: any, setTouched: any) => {
-    // In a real app, we'd validate only the current step's fields
-    setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1));
+  const nextStep = async (validateForm: any, setTouched: any, touched: any) => {
+    const errors = await validateForm();
+    
+    // Fields belonging to each step
+    const stepFields: Record<number, string[]> = {
+      0: ['fullName', 'email', 'phone', 'dob', 'aadhaar'],
+      1: ['qualification', 'graduationYear', 'score'],
+      2: ['screeningScore', 'interviewStatus']
+    };
+
+    const currentFields = stepFields[currentStep];
+    const stepErrors = currentFields.filter(field => errors[field]);
+
+    if (stepErrors.length === 0) {
+      setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1));
+    } else {
+      // Mark all fields in current step as touched to show errors
+      const newTouched = currentFields.reduce((acc, field) => ({ ...acc, [field]: true }), touched);
+      setTouched(newTouched);
+    }
   };
 
   const prevStep = () => {
@@ -169,11 +343,17 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
                     placeholder="10-digit mobile" 
                     helperText="Enter without country code"
                   />
-                  <FormField 
-                    label="Date of Birth" 
+                  <SoftRuleWrapper 
                     name="dob" 
-                    type="date" 
-                  />
+                    condition={!values.dob || (differenceInYears(new Date(), values.dob) >= 18 && differenceInYears(new Date(), values.dob) <= 35)}
+                    warningMessage="Candidate age should ideally be between 18 and 35 years."
+                  >
+                    <FormField 
+                      label="Date of Birth" 
+                      name="dob" 
+                      type="date" 
+                    />
+                  </SoftRuleWrapper>
                   <FormField 
                     label="Aadhaar Number" 
                     name="aadhaar" 
@@ -198,13 +378,17 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
                     options={["B.Tech", "B.E.", "B.Sc", "BCA", "M.Tech", "M.Sc", "MCA", "MBA"]}
                     className="md:col-span-2"
                   />
-                  <FormField 
-                    label="Graduation Year" 
-                    name="graduationYear" 
-                    type="number" 
-                    min={2015} 
-                    max={2025} 
-                  />
+                  <SoftRuleWrapper
+                    name="graduationYear"
+                    condition={!values.graduationYear || (values.graduationYear >= 2015 && values.graduationYear <= 2025)}
+                    warningMessage="Graduation year should be between 2015 and 2025."
+                  >
+                    <FormField 
+                      label="Graduation Year" 
+                      name="graduationYear" 
+                      type="number" 
+                    />
+                  </SoftRuleWrapper>
                   
                   <div className="space-y-4 md:col-span-2 p-6 bg-gray-50 rounded-2xl border border-gray-100">
                     <div className="flex items-center justify-between">
@@ -218,12 +402,18 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
                         Switch to {values.scoreType === 'percentage' ? 'CGPA' : 'Percentage'}
                       </button>
                     </div>
-                    <FormField 
-                      label={values.scoreType === 'percentage' ? 'Percentage (%)' : 'CGPA (out of 10)'} 
-                      name="score" 
-                      type="number" 
-                      placeholder={values.scoreType === 'percentage' ? 'e.g. 85' : 'e.g. 8.5'}
-                    />
+                    <SoftRuleWrapper
+                      name="score"
+                      condition={values.score === '' || values.score === null || Number(values.score) >= (values.scoreType === 'percentage' ? 60 : 6.0)}
+                      warningMessage={`Minimum ${values.scoreType === 'percentage' ? '60%' : '6.0 CGPA'} required for standard admission.`}
+                    >
+                      <FormField 
+                        label={values.scoreType === 'percentage' ? 'Percentage (%)' : 'CGPA (out of 10)'} 
+                        name="score" 
+                        type="number" 
+                        placeholder={values.scoreType === 'percentage' ? 'e.g. 85' : 'e.g. 8.5'}
+                      />
+                    </SoftRuleWrapper>
                   </div>
                 </motion.div>
               )}
@@ -250,14 +440,18 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
                   )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField 
-                      label="Screening Test Score" 
-                      name="screeningScore" 
-                      type="number" 
-                      min={0} 
-                      max={100} 
-                      placeholder="0-100"
-                    />
+                    <SoftRuleWrapper
+                      name="screeningScore"
+                      condition={values.screeningScore === '' || values.screeningScore === null || Number(values.screeningScore) >= 40}
+                      warningMessage="Screening score should be at least 40 out of 100."
+                    >
+                      <FormField 
+                        label="Screening Test Score" 
+                        name="screeningScore" 
+                        type="number" 
+                        placeholder="0-100"
+                      />
+                    </SoftRuleWrapper>
                     <FormField 
                       label="Interview Status" 
                       name="interviewStatus" 
@@ -319,7 +513,7 @@ export function AdmissionForm({ onComplete }: { onComplete: () => void }) {
                 {currentStep < STEPS.length - 1 ? (
                   <button
                     type="button"
-                    onClick={() => nextStep(validateForm, setTouched)}
+                    onClick={() => nextStep(validateForm, setTouched, touched)}
                     className="flex items-center gap-2 px-8 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
                   >
                     Continue
