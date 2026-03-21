@@ -14,6 +14,7 @@ import {
   ClipboardList
 } from 'lucide-react';
 import { format } from 'date-fns';
+import * as XLSX from 'xlsx';
 
 export interface AuditEntry {
   id: string;
@@ -30,6 +31,11 @@ export function AuditLog() {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [sheetUrl, setSheetUrl] = useState('');
+  const [sheetError, setSheetError] = useState('');
+  const [sheetInfo, setSheetInfo] = useState('');
+  const [isSheetImporting, setIsSheetImporting] = useState(false);
+  const [excelError, setExcelError] = useState('');
 
   useEffect(() => {
     const storedLogs = localStorage.getItem('admission_audit_log');
@@ -110,6 +116,210 @@ export function AuditLog() {
     URL.revokeObjectURL(url);
   };
 
+  const getGoogleSheetId = (url: string) => {
+    const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return match ? match[1] : null;
+  };
+
+  const getSheetGid = (url: string) => {
+    try {
+      const parsed = new URL(url);
+      const gidFromQuery = parsed.searchParams.get('gid');
+      if (gidFromQuery) return gidFromQuery;
+      if (parsed.hash.startsWith('#gid=')) return parsed.hash.replace('#gid=', '');
+      return '0';
+    } catch {
+      return '0';
+    }
+  };
+
+  const importSheetRowsToAuditLog = async () => {
+    setSheetError('');
+    setSheetInfo('');
+    const trimmedUrl = sheetUrl.trim();
+    const sheetId = getGoogleSheetId(trimmedUrl);
+
+    setIsSheetImporting(true);
+    try {
+      if (!sheetId) throw new Error('Enter a valid Google Sheet URL.');
+
+      const response = await fetch(`/api/google-export?url=${encodeURIComponent(trimmedUrl)}`);
+      if (!response.ok) {
+        const err = await response.json().catch(() => null);
+        throw new Error(err?.message || 'Could not read this Google Sheet. Check sharing access and sheet tab (gid).');
+      }
+
+      const csvText = await response.text();
+      if (/^\s*<(?:!doctype|html|head|body)\b/i.test(csvText)) {
+        throw new Error('Google returned HTML instead of CSV. Ensure the sheet is shared as Anyone with the link can view.');
+      }
+
+      const parseCsv = (text: string): string[][] => {
+        const rows: string[][] = [];
+        let row: string[] = [];
+        let cell = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < text.length; i += 1) {
+          const char = text[i];
+          const next = text[i + 1];
+
+          if (char === '"') {
+            if (inQuotes && next === '"') {
+              cell += '"';
+              i += 1;
+            } else {
+              inQuotes = !inQuotes;
+            }
+            continue;
+          }
+
+          if (char === ',' && !inQuotes) {
+            row.push(cell);
+            cell = '';
+            continue;
+          }
+
+          if ((char === '\n' || char === '\r') && !inQuotes) {
+            if (char === '\r' && next === '\n') i += 1;
+            row.push(cell);
+            rows.push(row);
+            row = [];
+            cell = '';
+            continue;
+          }
+
+          cell += char;
+        }
+
+        row.push(cell);
+        rows.push(row);
+        return rows
+          .map((r) => r.map((c) => c.trim()))
+          .filter((r) => r.some((c) => c.length > 0));
+      };
+
+      const rows = parseCsv(csvText);
+      if (rows.length < 2) throw new Error('No data rows found in Google Sheet.');
+
+      const normalize = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const headers = rows[0].map((h) => String(h ?? '').trim());
+      const headerIndex = headers.reduce<Record<string, number>>((acc, h, i) => {
+        acc[normalize(h)] = i;
+        return acc;
+      }, {});
+      const getCell = (row: string[], ...keys: string[]) => {
+        for (const key of keys) {
+          const idx = headerIndex[normalize(key)];
+          if (idx !== undefined) return String(row[idx] ?? '').trim();
+        }
+        return '';
+      };
+
+      const importedLogs: AuditEntry[] = rows
+        .slice(1)
+        .filter((row) => row.some((cell) => String(cell ?? '').trim().length > 0))
+        .map((row) => {
+          const fullName = getCell(row, 'Full Name', 'Candidate Name', 'Name');
+          const email = getCell(row, 'Email', 'Email Address');
+          const offerLetter = getCell(row, 'Offer Letter Sent');
+          const managerReview = getCell(row, 'Sent For Manager Review', 'Manager Review');
+          const exceptionCountRaw = getCell(row, 'Exception Count');
+          const parsedExceptionCount = Number(exceptionCountRaw);
+          const exceptionCount = Number.isNaN(parsedExceptionCount) ? 0 : parsedExceptionCount;
+
+          return {
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            candidateName: fullName || email || 'Imported Candidate',
+            email: email || 'N/A',
+            values: {
+              fullName,
+              email,
+              phone: getCell(row, 'Phone'),
+              dob: getCell(row, 'DOB', 'Date of Birth'),
+              aadhaar: getCell(row, 'Aadhaar'),
+              qualification: getCell(row, 'Qualification', 'Highest Qualification'),
+              graduationYear: getCell(row, 'Graduation Year'),
+              scoreType: getCell(row, 'Score Type'),
+              score: getCell(row, 'Score'),
+              screeningScore: getCell(row, 'Screening Score'),
+              interviewStatus: getCell(row, 'Interview Status'),
+              offerLetterSent: ['yes', 'true', '1'].includes(offerLetter.toLowerCase())
+            },
+            exceptionCount,
+            exceptions: [],
+            isFlagged: ['yes', 'true', '1'].includes(managerReview.toLowerCase())
+          };
+        });
+
+      if (importedLogs.length === 0) throw new Error('No valid rows found in Google Sheet.');
+
+      const updatedLogs = [...importedLogs, ...logs];
+      setLogs(updatedLogs);
+      localStorage.setItem('admission_audit_log', JSON.stringify(updatedLogs));
+      setSheetInfo(`Imported ${importedLogs.length} rows into Audit Log.`);
+    } catch (error: any) {
+      setSheetError(error?.message || 'Unable to import rows from Google Sheet.');
+    } finally {
+      setIsSheetImporting(false);
+    }
+  };
+
+  const exportRowsAsCsv = (rows: string[][], filenamePrefix: string) => {
+    if (rows.length === 0) throw new Error('No rows found to export.');
+    const maxCols = Math.max(...rows.map((row) => row.length));
+    const normalizedRows = rows.map((row) => {
+      const padded = [...row];
+      while (padded.length < maxCols) padded.push('');
+      return padded;
+    });
+
+    const escape = (value: string) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const csvContent = normalizedRows
+      .map((row) => row.map(escape).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExcelUploadExport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    setExcelError('');
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) throw new Error('No worksheet found in this Excel file.');
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(worksheet, {
+        header: 1,
+        blankrows: false
+      });
+
+      const normalizedRows = rows
+        .map((row) => row.map((cell) => (cell === null || cell === undefined ? '' : String(cell))))
+        .filter((row) => row.some((cell) => cell.trim().length > 0));
+
+      exportRowsAsCsv(normalizedRows, 'excel_rows_export');
+    } catch (error: any) {
+      setExcelError(error?.message || 'Unable to parse this Excel file.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
   };
@@ -183,6 +393,57 @@ export function AuditLog() {
             <ShieldAlert className="w-5 h-5" />
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-4 border border-black/5 shadow-sm space-y-3">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Import Rows from Google Sheet
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="url"
+            value={sheetUrl}
+            onChange={(e) => setSheetUrl(e.target.value)}
+            placeholder="https://docs.google.com/spreadsheets/d/..."
+            className="flex-1 px-3 py-2 text-sm rounded-xl border border-gray-200 focus:border-emerald-500 focus:outline-none"
+          />
+          <button
+            onClick={importSheetRowsToAuditLog}
+            disabled={isSheetImporting}
+            className="px-4 py-2 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isSheetImporting ? 'Importing...' : 'Import Sheet Rows'}
+          </button>
+        </div>
+        {sheetError && (
+          <p className="text-xs text-red-600">{sheetError}</p>
+        )}
+        {sheetInfo && (
+          <p className="text-xs text-emerald-700">{sheetInfo}</p>
+        )}
+        <p className="text-xs text-gray-400">
+          Google Sheets only. Rows are added directly to Audit Log (no CSV download).
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl p-4 border border-black/5 shadow-sm space-y-3">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Export CSV from Excel File
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleExcelUploadExport}
+            className="block w-full text-sm text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-emerald-700 hover:file:bg-emerald-100"
+          />
+        </div>
+        {excelError && (
+          <p className="text-xs text-red-600">{excelError}</p>
+        )}
+        <p className="text-xs text-gray-400">
+          Upload `.xlsx` or `.xls`. The first worksheet is converted and downloaded as CSV.
+        </p>
       </div>
 
       {logs.length === 0 ? (

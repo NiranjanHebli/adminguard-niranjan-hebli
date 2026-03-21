@@ -237,6 +237,23 @@ const buildSchema = (rules: ValidationRule[]) => {
       }
     });
 
+    // Hard bounds for score depending on score type
+    if (rule.field === 'score') {
+      fieldSchema = fieldSchema.test(
+        'score-range',
+        'Score must be between 0 and 100 for percentage, and 0 and 10 for CGPA',
+        function (value: any) {
+          if (value === undefined || value === null || value === '') return true;
+          const { scoreType } = this.parent;
+          if (scoreType === 'percentage') {
+            return value >= 0 && value <= 100;
+          }
+          // default to CGPA-style bounds when not percentage
+          return value >= 0 && value <= 10;
+        }
+      );
+    }
+
     schema[rule.field] = fieldSchema;
 
     if (rule.type === 'soft' && rule.exceptionAllowed) {

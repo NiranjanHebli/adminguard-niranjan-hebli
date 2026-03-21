@@ -71,6 +71,58 @@ async function startServer() {
     res.json(logs);
   });
 
+  app.get("/api/google-export", async (req, res) => {
+    const rawUrl = String(req.query.url || "").trim();
+    if (!rawUrl) {
+      return res.status(400).json({ success: false, message: "Missing url query parameter." });
+    }
+
+    const sheetMatch = rawUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!sheetMatch) {
+      return res.status(400).json({ success: false, message: "Provide a valid Google Sheet URL." });
+    }
+
+    try {
+      let exportUrls: string[] = [];
+      const contentType = "text/csv; charset=utf-8";
+      const parsed = new URL(rawUrl);
+      const gid = parsed.searchParams.get("gid") || (parsed.hash.startsWith("#gid=") ? parsed.hash.replace("#gid=", "") : "0");
+      exportUrls = [
+        `https://docs.google.com/spreadsheets/d/${sheetMatch[1]}/export?format=csv&gid=${gid}`,
+        `https://docs.google.com/spreadsheets/d/${sheetMatch[1]}/gviz/tq?tqx=out:csv&gid=${gid}`
+      ];
+
+      let body = "";
+      let fetchedOk = false;
+      for (const exportUrl of exportUrls) {
+        const response = await fetch(exportUrl, {
+          headers: { Accept: "text/csv,text/plain,text/*;q=0.9,*/*;q=0.8" }
+        });
+        if (!response.ok) continue;
+        const maybeBody = await response.text();
+        const looksLikeHtml = /^\s*<(?:!doctype|html|head|body)\b/i.test(maybeBody);
+        if (looksLikeHtml) continue;
+        body = maybeBody;
+        fetchedOk = true;
+        break;
+      }
+
+      if (!fetchedOk || !body.trim()) {
+        return res.status(502).json({
+          success: false,
+          message:
+            "Google returned a non-CSV response. Make sure the file is shared as Anyone with the link can view."
+        });
+      }
+
+      res.setHeader("Content-Type", contentType);
+      return res.status(200).send(body);
+    } catch (error) {
+      console.error("Google export error:", error);
+      return res.status(500).json({ success: false, message: "Unable to export from Google URL." });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
