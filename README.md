@@ -83,3 +83,5 @@ Vercel/Netlify (zero server management)
 
 
 ![alt text](./src/assets/page4.png)
+
+![alt text](./src/assets/mobile_responsiveness.png)
