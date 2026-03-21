@@ -70,3 +70,16 @@ Vercel/Netlify (zero server management)
 2. Run the app:
   `npm run dev`
 
+
+## UI - Overview :- 
+
+![alt text](./src/assets/home_page.png)
+
+
+![alt text](./src/assets/page2.png)
+
+
+![alt text](./src/assets/page3.png)
+
+
+![alt text](./src/assets/page4.png)
